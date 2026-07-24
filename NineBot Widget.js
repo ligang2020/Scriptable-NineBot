@@ -10,13 +10,23 @@ const Config = {
   // 当前 NinePlus Platform 默认接口：https://你的域名/admin/api/dashboard
   API_URL: "https://YOUR-DOMAIN.example/admin/api/dashboard",
 
-  // 推荐使用后端专门签发的“只读 API Token”。不要填写后台管理员密码。
+  // 认证方式：
+  // - "admin-session"：适用于当前 NinePlus Platform。组件会先用以下账号密码登录，再读取数据。
+  // - "token"：适用于你以后提供了只读 API Token 的后端。
+  AUTH_MODE: "admin-session",
+
+  // admin-session 模式：仅在 iPhone 的 Scriptable 脚本中填写，绝不能提交 GitHub。
+  LOGIN_URL: "https://YOUR-DOMAIN.example/admin/login",
+  ADMIN_USERNAME: "",
+  ADMIN_PASSWORD: "",
+
+  // token 模式：推荐未来改为只读 Token API 后使用；不要填写后台管理员密码。
   TOKEN: "PASTE_READ_ONLY_API_TOKEN_HERE",
   TOKEN_HEADER: "Authorization",
   TOKEN_PREFIX: "Bearer", // 如后端要求 X-API-Key，请改 TOKEN_HEADER 为 "X-API-Key" 并清空此项。
 
   // 后端有其他固定请求头时放在此处，例如 { "X-Client": "Scriptable" }。
-  // 不建议在此放 Cookie：会过期，且泄露后会暴露管理后台。
+  // 不建议在此放 Cookie：脚本会在 admin-session 模式下自动维护会话。
   EXTRA_HEADERS: {},
 
   // 多辆车时选择：数字（0 = 第一辆）或车辆 SN。
@@ -62,19 +72,54 @@ async function fetchDashboard() {
     throw new Error("请先在 Config 中填写 API_URL");
   }
 
+  // 当前 NinePlus Platform 的 dashboard 需要管理后台会话。
+  // Token 模式则直接附带 Authorization / X-API-Key 等请求头。
+  let headers = await buildRequestHeaders();
+  try {
+    const payload = await loadDashboard(headers);
+    return normalizeVehicleData(payload);
+  } catch (error) {
+    // 会话可能在服务端提前失效：清除本地 Cookie 后自动重新登录一次。
+    if (!isAdminSessionMode()) throw normalizeRequestError(error);
+    clearSavedSession();
+    try {
+      headers = await buildRequestHeaders(true);
+      const payload = await loadDashboard(headers);
+      return normalizeVehicleData(payload);
+    } catch (retryError) {
+      throw normalizeRequestError(retryError);
+    }
+  }
+}
+
+async function loadDashboard(headers) {
   const request = new Request(Config.API_URL);
   request.method = "GET";
   request.timeoutInterval = Config.REQUEST_TIMEOUT_SECONDS;
-  request.headers = buildHeaders();
+  request.headers = headers;
 
   try {
     const payload = await request.loadJSON();
-    return normalizeVehicleData(payload);
+    const statusCode = request.response && request.response.statusCode;
+    if (statusCode && (statusCode < 200 || statusCode >= 300)) {
+      const error = new Error((payload && payload.detail) || `HTTP ${statusCode}`);
+      error.statusCode = statusCode;
+      throw error;
+    }
+    return payload;
   } catch (error) {
-    // Scriptable 的 Error 信息因网络环境而异，统一转为可显示文本。
-    const message = error && error.message ? error.message : String(error);
-    throw new Error(message || "网络请求失败");
+    if (!error.statusCode && request.response) error.statusCode = request.response.statusCode;
+    throw error;
   }
+}
+
+async function buildRequestHeaders(forceRelogin = false) {
+  const headers = buildHeaders();
+  if (!isAdminSessionMode()) return headers;
+
+  const cookie = forceRelogin ? await createAdminSession() : (readSavedSession() || await createAdminSession());
+  headers.Cookie = cookie;
+  return headers;
 }
 
 function buildHeaders() {
@@ -84,11 +129,103 @@ function buildHeaders() {
   };
 
   const token = String(Config.TOKEN || "").trim();
-  if (token && !token.startsWith("PASTE_")) {
+  if (!isAdminSessionMode() && token && !token.startsWith("PASTE_")) {
     const prefix = String(Config.TOKEN_PREFIX || "").trim();
     headers[Config.TOKEN_HEADER] = prefix ? `${prefix} ${token}` : token;
   }
   return headers;
+}
+
+function isAdminSessionMode() {
+  return String(Config.AUTH_MODE || "token").toLowerCase() === "admin-session";
+}
+
+async function createAdminSession() {
+  if (!Config.LOGIN_URL || Config.LOGIN_URL.includes("YOUR-DOMAIN")) {
+    throw new Error("请填写 LOGIN_URL");
+  }
+  if (!String(Config.ADMIN_USERNAME || "").trim() || !String(Config.ADMIN_PASSWORD || "")) {
+    throw new Error("请在 Config 填写 ADMIN_USERNAME 和 ADMIN_PASSWORD");
+  }
+
+  const request = new Request(Config.LOGIN_URL);
+  request.method = "POST";
+  request.timeoutInterval = Config.REQUEST_TIMEOUT_SECONDS;
+  request.headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...Config.EXTRA_HEADERS,
+  };
+  request.body = JSON.stringify({
+    username: Config.ADMIN_USERNAME,
+    password: Config.ADMIN_PASSWORD,
+  });
+
+  let response;
+  try {
+    response = await request.loadJSON();
+  } catch (error) {
+    throw new Error("登录后台失败，请检查网络、LOGIN_URL、账号和密码");
+  }
+
+  const statusCode = request.response && request.response.statusCode;
+  if (statusCode && (statusCode < 200 || statusCode >= 300)) {
+    throw new Error((response && response.detail) || "登录后台失败，请检查账号和密码");
+  }
+
+  const cookie = extractSessionCookie(request.response);
+  if (!cookie) throw new Error("登录成功但未获得会话 Cookie");
+  saveSession(cookie);
+  return cookie;
+}
+
+function extractSessionCookie(response) {
+  // Scriptable 会优先将 Set-Cookie 解析为 response.cookies。
+  const cookies = response && response.cookies;
+  if (Array.isArray(cookies)) {
+    const cookie = cookies.find((item) => item && item.name && item.value !== undefined);
+    if (cookie) return `${cookie.name}=${cookie.value}`;
+  }
+
+  // 对旧版 / 特殊响应结构作 Set-Cookie 回退解析。
+  const headers = (response && response.headers) || {};
+  const setCookie = headers["Set-Cookie"] || headers["set-cookie"];
+  const text = Array.isArray(setCookie) ? setCookie.join(",") : String(setCookie || "");
+  const matched = text.match(/(?:^|,\s*)([^=;\s]+)=([^;]+)/);
+  return matched ? `${matched[1]}=${matched[2]}` : "";
+}
+
+function sessionCacheKey() {
+  return `ScriptableNineBotSession_${encodeURIComponent(Config.LOGIN_URL || "default").slice(0, 120)}`;
+}
+
+function readSavedSession() {
+  const key = sessionCacheKey();
+  if (!Keychain.contains(key)) return "";
+  try {
+    const saved = JSON.parse(Keychain.get(key));
+    if (saved.cookie && saved.expiresAt > Date.now()) return saved.cookie;
+  } catch (_) {}
+  clearSavedSession();
+  return "";
+}
+
+function saveSession(cookie) {
+  // 当前后台 Cookie 有效期是 12 小时；提前 5 分钟过期以减少刷新失败。
+  Keychain.set(sessionCacheKey(), JSON.stringify({
+    cookie,
+    expiresAt: Date.now() + 11 * 60 * 60 * 1000 + 55 * 60 * 1000,
+  }));
+}
+
+function clearSavedSession() {
+  const key = sessionCacheKey();
+  if (Keychain.contains(key)) Keychain.remove(key);
+}
+
+function normalizeRequestError(error) {
+  const message = error && error.message ? error.message : String(error || "");
+  return new Error(message || "网络请求失败");
 }
 
 /**

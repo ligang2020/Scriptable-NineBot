@@ -15,7 +15,7 @@
 
 - [`NineBot Widget.js`](./NineBot%20Widget.js)：可直接复制到 Scriptable 的完整脚本。
 
-## 重要：接口与认证
+## 最简单的配置：使用后台账号自动登录
 
 当前 NinePlus Platform 管理页是：
 
@@ -23,63 +23,65 @@
 https://你的域名/admin
 ```
 
-组件应该填写的是 JSON 数据接口，而不是管理页：
+数据接口是：
 
 ```text
 https://你的域名/admin/api/dashboard
 ```
 
-该后台现有前端以 **网页登录会话** 访问 `/admin/api/dashboard`。管理页前端代码没有展示 Bearer Token 鉴权，因此把一个任意 Token 填到 Scriptable 并不能自动取得会话数据。
+该接口需要先登录管理后台。最新版脚本已支持 **admin-session** 模式：首次刷新时，它会用你填写的后台账号密码登录，并把会话 Cookie 安全地缓存在 **iPhone 本机 Scriptable Keychain** 中约 12 小时；之后刷新会复用会话，不会每 5 分钟重复登录。
 
-### 推荐做法：增加只读 Token API
+在 iPhone 的 Scriptable 脚本顶部，按下面填写。账号和密码绝不能提交或粘贴回 GitHub；若 Scriptable 启用了 iCloud 同步，脚本内容也可能随 iCloud 同步。
 
-为后端增加一个仅允许 `GET` 的、独立于管理页面会话的接口，例如：
+```javascript
+AUTH_MODE: "admin-session",
+API_URL: "https://你的域名/admin/api/dashboard",
+LOGIN_URL: "https://你的域名/admin/login",
+ADMIN_USERNAME: "你的后台用户名",
+ADMIN_PASSWORD: "你的后台管理密码",
+APP_URL: "https://你的域名/admin",
+```
+
+> 必须使用 `https://`，不要使用 `http://`。管理页 `/admin` 不是 JSON 接口，不能填到 `API_URL`。
+
+### Scriptable 使用步骤
+
+1. 在 iPhone 安装并打开 **Scriptable**。
+2. 打开仓库中的 [`NineBot Widget.js`](./NineBot%20Widget.js)，复制全部代码。
+3. Scriptable 点右上角 **+**，粘贴代码，脚本命名为 `NineBot Widget`。
+4. 在顶部 `Config` 按上例填入你的域名、后台用户名和后台管理密码。
+5. 点击 Scriptable 内的运行按钮 ▶︎；首次运行会自动登录并显示预览。
+6. 回到主屏幕，长按空白处 → **编辑** → **添加小组件** → 搜索 **Scriptable**。
+7. 选 Small、Medium 或 Large，添加后长按该组件 → **编辑小组件** → `Script` 选择 `NineBot Widget`。
+
+多辆车时可以在 `Config` 中设置：
+
+```javascript
+VEHICLE: 0,             // 第一辆车
+// 或：
+VEHICLE: "车辆SN",     // 指定某辆车
+```
+
+### 以后改为只读 Token API（更推荐）
+
+若你以后为后端实现独立的只读接口，例如：
 
 ```text
 GET /api/v1/ninebot/dashboard
 Authorization: Bearer <READ_ONLY_TOKEN>
 ```
 
-接口返回可直接复用当前 `/admin/api/dashboard` 的 JSON。然后在脚本顶部 `Config` 区域填写：
+则可改为：
 
 ```javascript
+AUTH_MODE: "token",
 API_URL: "https://你的域名/api/v1/ninebot/dashboard",
 TOKEN: "你的只读 Token",
 TOKEN_HEADER: "Authorization",
 TOKEN_PREFIX: "Bearer",
 ```
 
-建议该 Token：
-
-1. 只允许读取当前用户的车辆状态；不允许登录、车辆控制或管理后台操作。
-2. 仅通过 HTTPS 传输。
-3. 支持随时轮换、撤销与过期。
-4. 不写入 GitHub，不分享给他人。
-
-如果你的后端采用 `X-API-Key`，设置：
-
-```javascript
-TOKEN_HEADER: "X-API-Key",
-TOKEN_PREFIX: "",
-```
-
-脚本已经适配当前仪表盘返回的 `vehicles → vehicle/state/battery/travel/prediction` 结构。未来替换为其他 JSON 格式时，只需修改 `normalizeVehicleData()`。
-
-## Scriptable 使用步骤
-
-1. 在 iPhone 安装 **Scriptable**。
-2. 打开 Scriptable，点右上角 **+**，新建脚本。
-3. 将 [`NineBot Widget.js`](./NineBot%20Widget.js) 的全部内容复制进去。
-4. 将脚本命名为 `NineBot Widget`（名称可自定；刷新按钮会自动读取当前脚本名）。
-5. 在文件顶部的 `Config` 区域填写：
-   - `API_URL`：你的只读 JSON API 地址；
-   - `TOKEN`：只读 API Token；
-   - `APP_URL`：点击组件后打开的地址。可填你的后台地址，或替换为已验证可用的九号 App URL Scheme；
-   - `VEHICLE`：多辆车时填 `0`、`1`… 或指定车辆 SN。
-6. 在 Scriptable 内点击运行一次，确认中号预览可加载数据。
-7. 回到 iPhone 主屏幕，长按空白处 → **编辑** → **添加小组件** → 搜索 **Scriptable**。
-8. 选择 Small、Medium 或 Large 尺寸并添加到主屏幕。
-9. 长按刚添加的小组件 → **编辑小组件** → `Script` 选择 `NineBot Widget`；若需要，在 `Parameter` 填车辆 SN（也可直接改 Config）。
+Token 接口应仅允许读取车辆状态，不能登录管理后台或控制车辆。
 
 ## 数据字段说明
 
@@ -105,10 +107,11 @@ TOKEN_PREFIX: "",
 
 ## 安全建议
 
-- 请只使用 `https://` API 地址，避免 HTTP 明文传输 Token。
-- 不要把后台管理员密码、网页登录 Cookie 或 Token 提交到仓库。
-- 不推荐把管理后台直接暴露为 Internet 上的 Token 接口；应单独实现权限最小化的只读 API。
-- 公开仓库只能提交 `YOUR-DOMAIN.example`、`PASTE_READ_ONLY_API_TOKEN_HERE` 等占位符。
+- 请只使用 `https://` 地址，避免 HTTP 明文传输账号、密码或 Token。
+- 不要把后台管理员密码、网页登录 Cookie 或 Token 提交到仓库、GitHub Issue 或聊天记录。
+- `admin-session` 模式的会话 Cookie 保存在 Scriptable Keychain；管理员密码仍是脚本配置中的明文，请仅保存在受保护的个人设备上。
+- 公开仓库只能提交 `YOUR-DOMAIN.example`、空账号密码及 Token 占位符。
+- 长期使用时，建议改为权限最小化的只读 Token API，而非给组件管理后台账号。
 
 ## 本地检查
 
