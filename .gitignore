@@ -1,0 +1,10 @@
+# 本地敏感配置与会话（不得提交）
+.env
+.env.*
+*.cookie
+*.cookies
+*.session
+config.local.js
+
+# macOS
+.DS_Store
