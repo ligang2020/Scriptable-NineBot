@@ -450,25 +450,31 @@ function addFooter(parent, date) {
   refresh.url = scriptRunURL();
 }
 
-async function addVehicleImage(parent, imageURL, size) {
-  // 图片请求失败时使用 SF Symbol 占位符，避免影响整个组件。
+async function addVehicleImage(parent, imageURL, size, fill = false) {
+  // 支持正方形或矩形展示框。Medium 使用横向大图，让车身成为主视觉。
+  const imageSize = typeof size === "number" ? new Size(size, size) : size;
   const image = imageURL ? await loadImage(imageURL) : null;
   if (image) {
     const vehicleImage = parent.addImage(image);
-    vehicleImage.imageSize = new Size(size, size);
+    vehicleImage.imageSize = imageSize;
     vehicleImage.resizable = true;
-    vehicleImage.cornerRadius = Math.min(16, size / 5);
+    // 车辆原图通常带透明留白；填充模式能让车身在展示框内更醒目。
+    if (fill && vehicleImage.applyFillingContentMode) {
+      vehicleImage.applyFillingContentMode();
+    } else if (vehicleImage.applyFittingContentMode) {
+      vehicleImage.applyFittingContentMode();
+    }
+    vehicleImage.cornerRadius = Math.min(16, Math.min(imageSize.width, imageSize.height) / 5);
     return vehicleImage;
   }
 
   const fallback = SFSymbol.named("bicycle");
-  fallback.applyFont(Font.regularSystemFont(size * 0.62));
+  fallback.applyFont(Font.regularSystemFont(Math.min(imageSize.width, imageSize.height) * 0.62));
   const placeholder = parent.addImage(fallback.image);
-  placeholder.imageSize = new Size(size, size);
+  placeholder.imageSize = imageSize;
   placeholder.tintColor = Theme.secondary;
   return placeholder;
 }
-
 async function loadImage(url) {
   try {
     const request = new Request(url);
@@ -630,65 +636,86 @@ async function createSmallWidget(vehicle) {
 
 async function createMediumWidget(vehicle) {
   const widget = makeWidget();
-  // Medium 高度有限，缩小外边距，把空间留给车图和关键数字。
-  widget.setPadding(8, 8, 8, 8);
+  // Medium 的信息只保留「车辆、速度、电量、续航」四个主角，避免出现小字堆叠。
+  widget.setPadding(5, 5, 5, 5);
   setWidgetURL(widget);
 
-  const card = makeCard(widget, 10);
+  const card = makeCard(widget, 8);
+
+  // 顶部仅保留车辆身份和在线状态，把纵向空间还给主体数据。
   const header = card.addStack();
   header.centerAlignContent();
   addText(header, vehicle.name, {
-    font: Font.boldSystemFont(17),
+    font: Font.boldSystemFont(18),
     color: Theme.primary,
-    minimumScaleFactor: 0.65,
+    minimumScaleFactor: 0.7,
   });
   addSpacer(header);
   addTeslaStatus(header, vehicle);
 
-  card.addSpacer(5);
+  card.addSpacer(2);
   const content = card.addStack();
   content.layoutHorizontally();
+  content.size = new Size(0, 87);
 
-  // 左侧只放大展示车辆，不再被型号等次要文字挤占高度。
+  // 左半：固定大展示框。图片以填充模式显示，消除透明边缘造成的“车很小”。
   const visual = content.addStack();
   visual.centerAlignContent();
-  visual.size = new Size(104, 0);
+  visual.size = new Size(140, 87);
   visual.backgroundColor = Theme.cardSecondary;
-  visual.cornerRadius = 11;
-  visual.setPadding(3, 3, 3, 3);
-  await addVehicleImage(visual, vehicle.imageURL, 78);
+  visual.cornerRadius = 12;
+  visual.setPadding(0, 3, 0, 3);
+  await addVehicleImage(visual, vehicle.imageURL, new Size(134, 85), true);
 
-  addSpacer(content, 14);
+  addSpacer(content, 9);
+
+  // 右半：显式指定宽度，防止 Stack 按内容收缩而留下大片空白。
   const dashboard = content.addStack();
   dashboard.layoutVertically();
+  dashboard.size = new Size(154, 87);
 
+  // 速度直接使用大号数字；不再额外占一行标签，确保 100% / 续航也足够大。
   const speedLine = dashboard.addStack();
   speedLine.bottomAlignContent();
-  const speedTitle = speedLine.addStack();
-  speedTitle.layoutVertically();
-  addText(speedTitle, vehicle.speedIsHistorical ? "最近速度" : "当前速度", {
-    font: Font.mediumSystemFont(10), color: Theme.secondary,
-  });
-  speedTitle.addSpacer(1);
-  addText(speedTitle, speedText(vehicle.speed), {
-    font: Font.boldMonospacedSystemFont(35), color: Theme.primary, minimumScaleFactor: 0.6,
+  addText(speedLine, speedText(vehicle.speed), {
+    font: Font.boldMonospacedSystemFont(42),
+    color: Theme.primary,
+    minimumScaleFactor: 0.66,
   });
   addSpacer(speedLine, 5);
-  addText(speedLine, "km/h", { font: Font.mediumMonospacedSystemFont(11), color: Theme.secondary });
+  addText(speedLine, "km/h", {
+    font: Font.mediumMonospacedSystemFont(12), color: Theme.secondary,
+  });
 
-  dashboard.addSpacer(3);
-  const energy = dashboard.addStack();
-  addMediumValue(energy, "电量", batteryText(vehicle.battery), "battery.100", Theme.positive);
-  addSpacer(energy, 13);
-  addMediumValue(energy, "续航", rangeText(vehicle.range), "location.fill", Theme.secondary);
+  dashboard.addSpacer(0);
+  const metrics = dashboard.addStack();
+  metrics.centerAlignContent();
+  addSymbol(metrics, "battery.100", 11, Theme.positive);
+  addSpacer(metrics, 4);
+  addText(metrics, batteryText(vehicle.battery), {
+    font: Font.boldMonospacedSystemFont(23), color: Theme.primary, minimumScaleFactor: 0.72,
+  });
+  addSpacer(metrics, 11);
+  addSymbol(metrics, "location.fill", 10, Theme.secondary);
+  addSpacer(metrics, 4);
+  addText(metrics, rangeText(vehicle.range), {
+    font: Font.boldMonospacedSystemFont(18), color: Theme.primary, minimumScaleFactor: 0.65,
+  });
 
-  dashboard.addSpacer(4);
+  dashboard.addSpacer(0);
   const state = dashboard.addStack();
-  addMediumValue(state, "模式", vehicle.mode === "--" ? "—" : vehicle.mode, "figure.outdoor.cycle", Theme.secondary);
-  addSpacer(state, 13);
-  addMediumValue(state, "车锁", vehicle.locked ? "已锁" : "未锁", lockIcon(vehicle), vehicle.locked ? Theme.primary : Theme.warning);
+  state.centerAlignContent();
+  addSymbol(state, lockIcon(vehicle), 10, vehicle.locked ? Theme.primary : Theme.warning);
+  addSpacer(state, 4);
+  addText(state, vehicle.locked ? "已锁车" : "未锁车", {
+    font: Font.mediumSystemFont(11), color: vehicle.locked ? Theme.secondary : Theme.warning,
+  });
+  addSpacer(state, 7);
+  addText(state, `模式 ${vehicle.mode === "--" ? "—" : vehicle.mode}`, {
+    font: Font.mediumSystemFont(11), color: Theme.secondary, minimumScaleFactor: 0.75,
+  });
 
-  card.addSpacer(5);
+  card.addSpacer(4);
   const footer = card.addStack();
   footer.centerAlignContent();
   addText(footer, vehicle.charging ? "充电中" : "准备骑行", {
@@ -698,26 +725,11 @@ async function createMediumWidget(vehicle) {
   addSpacer(footer);
   addSymbol(footer, "clock", 9, Theme.tertiary);
   addSpacer(footer, 3);
-  addText(footer, formatUpdateTime(vehicle.updatedAt), { font: Font.regularSystemFont(9), color: Theme.secondary });
+  addText(footer, formatUpdateTime(vehicle.updatedAt), {
+    font: Font.regularMonospacedSystemFont(10), color: Theme.secondary,
+  });
   footer.url = scriptRunURL();
   return widget;
-}
-
-function addMediumValue(parent, label, value, icon, color) {
-  const metric = parent.addStack();
-  metric.layoutVertically();
-  const title = metric.addStack();
-  title.centerAlignContent();
-  addSymbol(title, icon, 10, color);
-  addSpacer(title, 3);
-  addText(title, label, { font: Font.mediumSystemFont(9), color: Theme.tertiary });
-  metric.addSpacer(1);
-  addText(metric, value, {
-    font: Font.boldMonospacedSystemFont(14),
-    color: color === Theme.warning ? Theme.warning : Theme.primary,
-    minimumScaleFactor: 0.65,
-  });
-  return metric;
 }
 
 async function createLargeWidget(vehicle) {
