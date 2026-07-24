@@ -44,21 +44,23 @@ const Config = {
 // 设计令牌：低饱和、Apple 系统风格，自动匹配浅色 / 深色模式
 // ================================================================
 const Theme = {
-  widget: Color.dynamic(new Color("F2F2F7"), new Color("000000")),
-  card: Color.dynamic(new Color("FFFFFF", 0.88), new Color("1C1C1E", 0.96)),
-  cardSecondary: Color.dynamic(new Color("F2F2F7"), new Color("2C2C2E")),
-  primary: Color.dynamic(new Color("1C1C1E"), new Color("F5F5F7")),
-  secondary: Color.dynamic(new Color("6C6C70"), new Color("98989F")),
-  tertiary: Color.dynamic(new Color("AEAEB2"), new Color("636366")),
-  accent: Color.dynamic(new Color("3478F6"), new Color("64A8FF")),
-  positive: Color.dynamic(new Color("2F7D58"), new Color("63B08A")),
-  warning: Color.dynamic(new Color("B36A25"), new Color("D99B62")),
-  danger: Color.dynamic(new Color("B43B36"), new Color("E27D75")),
+  // Tesla-inspired 中控屏：近黑 / 暖白底色，少量克制红色强调。
+  widget: Color.dynamic(new Color("F7F7F5"), new Color("0A0A0B")),
+  card: Color.dynamic(new Color("FFFFFF", 0.92), new Color("171719", 0.98)),
+  cardSecondary: Color.dynamic(new Color("ECECEA"), new Color("242426")),
+  primary: Color.dynamic(new Color("151516"), new Color("F4F4F5")),
+  secondary: Color.dynamic(new Color("707074"), new Color("A1A1A6")),
+  tertiary: Color.dynamic(new Color("AEAEB0"), new Color("66666B")),
+  accent: Color.dynamic(new Color("D6281B"), new Color("FF453A")),
+  positive: Color.dynamic(new Color("227A52"), new Color("4DBD84")),
+  warning: Color.dynamic(new Color("AD6C20"), new Color("E2A55C")),
+  danger: Color.dynamic(new Color("C92A20"), new Color("FF6961")),
+  separator: Color.dynamic(new Color("D9D9D6"), new Color("37373A")),
 };
 
 const Layout = {
-  radius: 18,
-  cardPadding: 12,
+  radius: 14,
+  cardPadding: 14,
   smallInset: 14,
   mediumInset: 14,
   largeInset: 16,
@@ -477,6 +479,58 @@ async function loadImage(url) {
   }
 }
 
+function addDivider(parent, opacity = 1) {
+  const line = parent.addStack();
+  line.size = new Size(0, 1);
+  line.backgroundColor = Theme.separator;
+  return line;
+}
+
+function addTeslaEyebrow(parent, text = "NINEBOT") {
+  addText(parent, text.toUpperCase(), {
+    font: Font.mediumMonospacedSystemFont(9),
+    color: Theme.tertiary,
+  });
+}
+
+function addTeslaStatus(parent, vehicle) {
+  const row = parent.addStack();
+  row.centerAlignContent();
+  const tone = vehicle.online ? Theme.positive : Theme.danger;
+  const dot = row.addStack();
+  dot.size = new Size(6, 6);
+  dot.cornerRadius = 3;
+  dot.backgroundColor = tone;
+  addSpacer(row, 5);
+  addText(row, vehicle.online ? "ONLINE" : "OFFLINE", {
+    font: Font.mediumMonospacedSystemFont(9),
+    color: tone,
+  });
+  return row;
+}
+
+function addTeslaMetric(parent, label, value, icon, options = {}) {
+  const metric = parent.addStack();
+  metric.layoutVertically();
+  const labelRow = metric.addStack();
+  labelRow.centerAlignContent();
+  if (icon) {
+    addSymbol(labelRow, icon, 10, options.iconColor || Theme.tertiary);
+    addSpacer(labelRow, 4);
+  }
+  addText(labelRow, label.toUpperCase(), {
+    font: Font.mediumMonospacedSystemFont(9),
+    color: Theme.tertiary,
+  });
+  metric.addSpacer(4);
+  addText(metric, value, {
+    font: options.font || Font.mediumMonospacedSystemFont(options.size || 16),
+    color: options.color || Theme.primary,
+    minimumScaleFactor: 0.6,
+  });
+  return metric;
+}
+
 function statusText(vehicle) {
   return vehicle.online ? "在线" : "离线";
 }
@@ -541,36 +595,36 @@ async function createSmallWidget(vehicle) {
   widget.setPadding(Layout.smallInset, Layout.smallInset, Layout.smallInset, Layout.smallInset);
   setWidgetURL(widget);
 
-  const card = makeCard(widget, 12);
+  // Tesla-inspired：极简读数卡，减少装饰，突出能量与锁车状态。
+  const card = makeCard(widget, 14);
   const header = card.addStack();
   header.centerAlignContent();
-  addSymbol(header, "bicycle", 18, Theme.accent);
-  addSpacer(header, 6);
-  addText(header, vehicle.name, { font: Font.semiboldSystemFont(12), minimumScaleFactor: 0.65 });
+  addTeslaEyebrow(header, "NINEBOT // VEHICLE");
   addSpacer(header);
-  addPill(header, vehicle.online ? "antenna.radiowaves.left.and.right" : "wifi.slash", statusText(vehicle), statusTone(vehicle));
+  addTeslaStatus(header, vehicle);
 
-  addSpacer(card, 9);
-  const values = card.addStack();
-  values.centerAlignContent();
-  addText(values, batteryText(vehicle.battery), {
-    font: Font.boldMonospacedSystemFont(31),
+  card.addSpacer(13);
+  const energy = card.addStack();
+  energy.bottomAlignContent();
+  addText(energy, batteryText(vehicle.battery), {
+    font: Font.boldMonospacedSystemFont(37),
     color: Theme.primary,
+    minimumScaleFactor: 0.65,
   });
-  addSpacer(values, 7);
-  const rangeStack = values.addStack();
-  rangeStack.layoutVertically();
-  addText(rangeStack, rangeText(vehicle.range), { font: Font.mediumMonospacedSystemFont(12), color: Theme.secondary });
-  addText(rangeStack, "剩余续航", { font: Font.regularSystemFont(9), color: Theme.tertiary });
+  addSpacer(energy, 6);
+  addText(energy, "BATTERY", { font: Font.mediumMonospacedSystemFont(10), color: Theme.tertiary });
 
-  addSpacer(card);
+  card.addSpacer(10);
+  addDivider(card, 0.8);
+  card.addSpacer(10);
   const bottom = card.addStack();
-  bottom.centerAlignContent();
-  addPill(bottom, lockIcon(vehicle), lockText(vehicle), vehicle.locked ? Theme.positive : Theme.warning);
+  addTeslaMetric(bottom, "Range", rangeText(vehicle.range), "location.fill", { size: 13 });
   addSpacer(bottom);
-  const chargeIcon = vehicle.charging ? "bolt.fill" : "battery.100";
-  addSymbol(bottom, chargeIcon, 13, vehicle.charging ? Theme.warning : Theme.secondary);
-
+  addTeslaMetric(bottom, "Lock", vehicle.locked ? "LOCKED" : "UNLOCKED", lockIcon(vehicle), {
+    size: 12,
+    color: vehicle.locked ? Theme.primary : Theme.warning,
+    iconColor: vehicle.locked ? Theme.primary : Theme.warning,
+  });
   return widget;
 }
 
@@ -578,43 +632,76 @@ async function createMediumWidget(vehicle) {
   const widget = makeWidget();
   setWidgetURL(widget);
 
-  const card = makeCard(widget, 14);
+  const card = makeCard(widget, 15);
+  const header = card.addStack();
+  header.centerAlignContent();
+  addTeslaEyebrow(header, "NINEBOT // DRIVE STATUS");
+  addSpacer(header);
+  addTeslaStatus(header, vehicle);
+
+  card.addSpacer(10);
+  addDivider(card, 0.8);
+  card.addSpacer(10);
+
   const content = card.addStack();
   content.layoutHorizontally();
 
-  // 左侧：车辆图片
+  // 左侧：更大、更干净的车辆视觉区。
   const visual = content.addStack();
   visual.layoutVertically();
-  visual.size = new Size(100, 0);
+  visual.size = new Size(112, 0);
   const imageArea = visual.addStack();
   imageArea.centerAlignContent();
-  await addVehicleImage(imageArea, vehicle.imageURL, 78);
-  addSpacer(visual, 7);
-  addText(visual, vehicle.name, { font: Font.semiboldSystemFont(13), minimumScaleFactor: 0.65 });
-  addText(visual, vehicle.model || statusText(vehicle), { font: Font.regularSystemFont(10), color: Theme.secondary, minimumScaleFactor: 0.6 });
+  imageArea.backgroundColor = Theme.cardSecondary;
+  imageArea.cornerRadius = 12;
+  imageArea.setPadding(7, 7, 7, 7);
+  await addVehicleImage(imageArea, vehicle.imageURL, 82);
+  visual.addSpacer(7);
+  addText(visual, vehicle.name, { font: Font.semiboldSystemFont(13), minimumScaleFactor: 0.62 });
+  addText(visual, vehicle.model || "ELECTRIC VEHICLE", {
+    font: Font.mediumMonospacedSystemFont(9), color: Theme.tertiary, minimumScaleFactor: 0.6,
+  });
 
-  addSpacer(content, 12);
-  const metrics = content.addStack();
-  metrics.layoutVertically();
-  const top = metrics.addStack();
-  addMetric(top, "battery.100", "当前电量", batteryText(vehicle.battery), { iconColor: Theme.positive, size: 17 });
-  addSpacer(top);
-  addMetric(top, "location.fill", "剩余续航", rangeText(vehicle.range), { size: 15 });
-  metrics.addSpacer(10);
-  const bottom = metrics.addStack();
-  addMetric(bottom, "gauge.with.dots.needle.50percent", vehicle.speedIsHistorical ? "最近速度" : "当前速度", `${speedText(vehicle.speed)} km/h`, { size: 14 });
-  addSpacer(bottom);
-  addMetric(bottom, "figure.outdoor.cycle", "模式", vehicle.mode, { size: 14, color: vehicle.mode === "--" ? Theme.secondary : Theme.primary });
+  addSpacer(content, 15);
+  const dashboard = content.addStack();
+  dashboard.layoutVertically();
+  const speedLabel = dashboard.addStack();
+  speedLabel.centerAlignContent();
+  addText(speedLabel, vehicle.speedIsHistorical ? "LAST TRIP SPEED" : "CURRENT SPEED", {
+    font: Font.mediumMonospacedSystemFont(9), color: Theme.tertiary,
+  });
+  dashboard.addSpacer(1);
+  const speedLine = dashboard.addStack();
+  speedLine.bottomAlignContent();
+  addText(speedLine, speedText(vehicle.speed), {
+    font: Font.boldMonospacedSystemFont(31), color: Theme.primary, minimumScaleFactor: 0.6,
+  });
+  addSpacer(speedLine, 5);
+  addText(speedLine, "km/h", { font: Font.mediumMonospacedSystemFont(10), color: Theme.secondary });
+  dashboard.addSpacer(8);
+  const detail = dashboard.addStack();
+  addTeslaMetric(detail, "Battery", batteryText(vehicle.battery), "battery.100", { size: 15, iconColor: Theme.positive });
+  addSpacer(detail, 12);
+  addTeslaMetric(detail, "Range", rangeText(vehicle.range), "location.fill", { size: 13 });
+  dashboard.addSpacer(8);
+  const state = dashboard.addStack();
+  addTeslaMetric(state, "Mode", vehicle.mode === "--" ? "—" : vehicle.mode.toUpperCase(), "figure.outdoor.cycle", { size: 13 });
+  addSpacer(state, 12);
+  addTeslaMetric(state, "Lock", vehicle.locked ? "LOCKED" : "OPEN", lockIcon(vehicle), {
+    size: 11, color: vehicle.locked ? Theme.primary : Theme.warning,
+  });
 
-  card.addSpacer(10);
+  card.addSpacer(8);
+  addDivider(card, 0.8);
+  card.addSpacer(6);
   const footer = card.addStack();
   footer.centerAlignContent();
-  addPill(footer, lockIcon(vehicle), lockText(vehicle), vehicle.locked ? Theme.positive : Theme.warning);
-  addSpacer(footer, 7);
-  if (vehicle.charging) addPill(footer, "bolt.fill", "充电中", Theme.warning);
+  addText(footer, vehicle.charging ? "CHARGING" : "READY TO DRIVE", {
+    font: Font.mediumMonospacedSystemFont(9),
+    color: vehicle.charging ? Theme.positive : Theme.secondary,
+  });
   addSpacer(footer);
   addFooterInline(footer, vehicle.updatedAt);
-
   return widget;
 }
 
@@ -623,61 +710,81 @@ async function createLargeWidget(vehicle) {
   widget.setPadding(Layout.largeInset, Layout.largeInset, Layout.largeInset, Layout.largeInset);
   setWidgetURL(widget);
 
-  // 顶部：图片与名称
-  const headerCard = makeCard(widget, 13);
-  headerCard.layoutHorizontally();
-  const visual = headerCard.addStack();
-  visual.centerAlignContent();
-  await addVehicleImage(visual, vehicle.imageURL, 64);
-  addSpacer(headerCard, 12);
-  const heading = headerCard.addStack();
-  heading.layoutVertically();
-  addText(heading, vehicle.name, { font: Font.boldSystemFont(18), minimumScaleFactor: 0.65 });
-  addSpacer(heading, 3);
-  addText(heading, vehicle.model || "九号电动车", { font: Font.regularSystemFont(11), color: Theme.secondary, minimumScaleFactor: 0.65 });
-  addSpacer(heading, 7);
-  addPill(heading, vehicle.online ? "antenna.radiowaves.left.and.right" : "wifi.slash", statusText(vehicle), statusTone(vehicle));
+  // 顶部：像车辆中控屏一样的极简身份区。
+  const header = makeCard(widget, 14);
+  const headerTop = header.addStack();
+  headerTop.centerAlignContent();
+  addTeslaEyebrow(headerTop, "NINEBOT // VEHICLE CONSOLE");
+  addSpacer(headerTop);
+  addTeslaStatus(headerTop, vehicle);
+  header.addSpacer(9);
+  const identity = header.addStack();
+  identity.layoutHorizontally();
+  const imageArea = identity.addStack();
+  imageArea.centerAlignContent();
+  imageArea.backgroundColor = Theme.cardSecondary;
+  imageArea.cornerRadius = 12;
+  imageArea.setPadding(6, 9, 6, 9);
+  await addVehicleImage(imageArea, vehicle.imageURL, 68);
+  addSpacer(identity, 13);
+  const identityText = identity.addStack();
+  identityText.layoutVertically();
+  addText(identityText, vehicle.name, { font: Font.boldSystemFont(19), minimumScaleFactor: 0.62 });
+  identityText.addSpacer(3);
+  addText(identityText, vehicle.model || "ELECTRIC VEHICLE", {
+    font: Font.mediumMonospacedSystemFont(10), color: Theme.tertiary, minimumScaleFactor: 0.6,
+  });
+  identityText.addSpacer(8);
+  addText(identityText, vehicle.charging ? "CHARGING" : (vehicle.locked ? "SECURED" : "READY"), {
+    font: Font.mediumMonospacedSystemFont(10),
+    color: vehicle.charging ? Theme.positive : (vehicle.locked ? Theme.secondary : Theme.warning),
+  });
 
   widget.addSpacer(10);
 
-  // 中间：突出显示速度、模式、电量、续航
-  const drivingCard = makeCard(widget, 15);
-  const driving = drivingCard.addStack();
-  driving.layoutHorizontally();
-  const speed = driving.addStack();
-  speed.layoutVertically();
-  addText(speed, vehicle.speedIsHistorical ? "最近速度" : "当前速度", { font: Font.mediumSystemFont(11), color: Theme.secondary });
-  speed.addSpacer(3);
-  const speedLine = speed.addStack();
+  // 中部：最大化当前速度。
+  const driving = makeCard(widget, 16);
+  const titleRow = driving.addStack();
+  addTeslaEyebrow(titleRow, vehicle.speedIsHistorical ? "LAST TRIP SPEED" : "CURRENT SPEED");
+  driving.addSpacer(3);
+  const speedLine = driving.addStack();
   speedLine.bottomAlignContent();
-  addText(speedLine, speedText(vehicle.speed), { font: Font.boldMonospacedSystemFont(42), color: Theme.primary, minimumScaleFactor: 0.65 });
-  addSpacer(speedLine, 4);
-  addText(speedLine, "km/h", { font: Font.mediumMonospacedSystemFont(12), color: Theme.secondary });
-
-  addSpacer(driving);
-  const drivingSide = driving.addStack();
-  drivingSide.layoutVertically();
-  addMetric(drivingSide, "figure.outdoor.cycle", "车辆模式", vehicle.mode, { size: 17 });
-  drivingSide.addSpacer(11);
-  addMetric(drivingSide, "battery.100", "当前电量", batteryText(vehicle.battery), { iconColor: Theme.positive, size: 17 });
-  drivingSide.addSpacer(11);
-  addMetric(drivingSide, "location.fill", "剩余续航", rangeText(vehicle.range), { size: 15 });
+  addText(speedLine, speedText(vehicle.speed), {
+    font: Font.boldMonospacedSystemFont(56), color: Theme.primary, minimumScaleFactor: 0.55,
+  });
+  addSpacer(speedLine, 7);
+  addText(speedLine, "km/h", { font: Font.mediumMonospacedSystemFont(14), color: Theme.secondary });
+  driving.addSpacer(9);
+  addDivider(driving, 0.8);
+  driving.addSpacer(10);
+  const vehicleStats = driving.addStack();
+  addTeslaMetric(vehicleStats, "Drive Mode", vehicle.mode === "--" ? "—" : vehicle.mode.toUpperCase(), "figure.outdoor.cycle", { size: 16 });
+  addSpacer(vehicleStats);
+  addTeslaMetric(vehicleStats, "Battery", batteryText(vehicle.battery), "battery.100", { size: 18, iconColor: Theme.positive });
+  addSpacer(vehicleStats);
+  addTeslaMetric(vehicleStats, "Range", rangeText(vehicle.range), "location.fill", { size: 15 });
 
   widget.addSpacer(10);
 
-  // 底部：行程与状态
-  const detailsCard = makeCard(widget, 13);
-  const details = detailsCard.addStack();
-  addMetric(details, "figure.outdoor.cycle", "今日骑行", distanceText(vehicle.todayDistance), { size: 15 });
-  addSpacer(details);
-  addMetric(details, "gauge.high", "累计里程", distanceText(vehicle.totalDistance), { size: 15 });
-  addSpacer(details);
-  const lockMetric = addMetric(details, lockIcon(vehicle), "车辆锁定", lockText(vehicle), { size: 13, iconColor: vehicle.locked ? Theme.positive : Theme.warning });
-  addSpacer(details);
-  addMetric(details, vehicle.charging ? "bolt.fill" : "battery.100", "充电状态", vehicle.charging ? "充电中" : "未充电", { size: 13, iconColor: vehicle.charging ? Theme.warning : Theme.secondary });
-
-  detailsCard.addSpacer(11);
-  addFooter(detailsCard, vehicle.updatedAt);
+  // 底部：平整的行程与车辆状态栏。
+  const summary = makeCard(widget, 14);
+  const tripRow = summary.addStack();
+  addTeslaMetric(tripRow, "Today", distanceText(vehicle.todayDistance), "figure.outdoor.cycle", { size: 14 });
+  addSpacer(tripRow);
+  addTeslaMetric(tripRow, "Odometer", distanceText(vehicle.totalDistance), "gauge.high", { size: 14 });
+  addSpacer(tripRow);
+  addTeslaMetric(tripRow, "Lock", vehicle.locked ? "LOCKED" : "OPEN", lockIcon(vehicle), {
+    size: 11, color: vehicle.locked ? Theme.primary : Theme.warning,
+  });
+  addSpacer(tripRow);
+  addTeslaMetric(tripRow, "Charge", vehicle.charging ? "ACTIVE" : "OFF", vehicle.charging ? "bolt.fill" : "battery.100", {
+    size: 11, color: vehicle.charging ? Theme.positive : Theme.secondary,
+    iconColor: vehicle.charging ? Theme.positive : Theme.tertiary,
+  });
+  summary.addSpacer(10);
+  addDivider(summary, 0.8);
+  summary.addSpacer(7);
+  addFooter(summary, vehicle.updatedAt);
   return widget;
 }
 
@@ -723,8 +830,20 @@ async function createWidget() {
       default: return await createMediumWidget(vehicle);
     }
   } catch (error) {
+    // 在 Scriptable App 内手动运行时弹出真实错误，便于配置排查；
+    // 主屏幕 Widget 仍保持简洁的离线错误卡片。
+    if (!config.runsInWidget) await showConnectionError(error);
     return await createErrorWidget(error);
   }
+}
+
+async function showConnectionError(error) {
+  const message = (error && error.message) ? error.message : "未知错误";
+  const alert = new Alert();
+  alert.title = "九号组件连接失败";
+  alert.message = `${message}\n\n请检查：\n1. API_URL 与 LOGIN_URL 是否均为 https:// 地址；\n2. ADMIN_USERNAME / ADMIN_PASSWORD 是否已填写；\n3. 手机是否能访问你的后台。`;
+  alert.addAction("知道了");
+  await alert.presentAlert();
 }
 
 // ================================================================
